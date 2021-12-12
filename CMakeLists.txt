@@ -195,6 +195,7 @@ target_sources(ccls PRIVATE third_party/siphash.cc)
 
 target_sources(ccls PRIVATE
   src/clang_tu.cc
+  src/comment_parser.cc
   src/config.cc
   src/filesystem.cc
   src/fuzzy_match.cc

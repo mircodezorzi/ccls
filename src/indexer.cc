@@ -4,6 +4,7 @@
 #include "indexer.hh"
 
 #include "clang_tu.hh"
+#include "comment_parser.hh"
 #include "log.hh"
 #include "pipeline.hh"
 #include "platform.hh"
@@ -408,7 +409,20 @@ public:
   ASTContext *ctx;
   IndexParam &param;
 
-  std::string getComment(const Decl *d) {
+  std::string getParsedComment(const Decl *d) {
+    const RawComment *rc = ctx->getRawCommentForAnyRedecl(d);
+    if (!rc)
+      return "";
+
+    if (rc->isDocumentation()) {
+      CommentParser cp = CommentParser(ctx);
+      return cp.Parse(rc);
+    } else {
+      return getRawComment(d);
+    }
+  }
+
+  std::string getRawComment(const Decl *d) {
     SourceManager &sm = ctx->getSourceManager();
     const RawComment *rc = ctx->getRawCommentForAnyRedecl(d);
     if (!rc)
@@ -690,7 +704,7 @@ public:
   IndexDataConsumer(IndexParam &param) : param(param) {}
   void initialize(ASTContext &ctx) override { this->ctx = param.ctx = &ctx; }
 #if LLVM_VERSION_MAJOR < 10 // llvmorg-10-init-12036-g3b9715cb219
-# define handleDeclOccurrence handleDeclOccurence
+#define handleDeclOccurrence handleDeclOccurence
 #endif
   bool handleDeclOccurrence(const Decl *d, index::SymbolRoleSet roles,
                             ArrayRef<index::SymbolRelation> relations,
@@ -798,7 +812,7 @@ public:
         return;
       }
       if (entity->def.comments[0] == '\0' && g_config->index.comments)
-        entity->def.comments = intern(getComment(origD));
+        entity->def.comments = intern(getParsedComment(origD));
     };
     switch (kind) {
     case Kind::Invalid:
@@ -888,10 +902,10 @@ public:
                 Usr usr1 = getUsr(d1, &info1);
                 IndexType &type1 = db->toType(usr1);
                 SourceLocation sl1 = d1->getLocation();
-                type1.def.spell = {
-                    Use{{fromTokenRange(sm, lang, {sl1, sl1}), Role::Definition},
-                        lid},
-                    fromTokenRange(sm, lang, sr1)};
+                type1.def.spell = {Use{{fromTokenRange(sm, lang, {sl1, sl1}),
+                                        Role::Definition},
+                                       lid},
+                                   fromTokenRange(sm, lang, sr1)};
                 type1.def.detailed_name = intern(info1->short_name);
                 type1.def.short_name_size = int16_t(info1->short_name.size());
                 type1.def.kind = SymbolKind::TypeParameter;
@@ -1211,7 +1225,7 @@ class IndexDiags : public DiagnosticConsumer {
 public:
   llvm::SmallString<64> message;
   void HandleDiagnostic(DiagnosticsEngine::Level level,
-    const clang::Diagnostic &info) override {
+                        const clang::Diagnostic &info) override {
     DiagnosticConsumer::HandleDiagnostic(level, info);
     if (message.empty())
       info.FormatDiagnostic(message);
